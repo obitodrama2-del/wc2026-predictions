@@ -682,7 +682,9 @@ def predict_match_v2(home_team: TeamProfile,
                       odd_2: float,
                       rho: float = -0.13,
                       kelly_fraction: float = 0.25,
-                      alpha: float = 0.01) -> dict:
+                      alpha: float = 0.01,
+                      use_dynamic: bool = False,
+                      half_life_days: float = 180.0) -> dict:
     """
     Full pipeline v2: Time Decay → Elo → WC Modifiers → Dixon-Coles → Kelly.
 
@@ -694,18 +696,33 @@ def predict_match_v2(home_team: TeamProfile,
         odd_1/x/2:      Bookmaker decimal odds
         rho:            Dixon-Coles correlation (default −0.13)
         kelly_fraction: Fractional Kelly (default 0.25)
-        alpha:          Time decay rate (default 0.01)
+        alpha:          Time decay rate for the built-in static path (default 0.01)
+        use_dynamic:    If True, pull live xG + half-life λ from dynamic_data
+                        (API-Sports → Elo fallback). If False, use the
+                        in-engine match_history / static path.
+        half_life_days: Half-life (days) for the dynamic decay (default 180).
 
     Returns:
         Full prediction dict with probabilities, Kelly stakes, value bet.
     """
-    # Step 1: Get base lambdas (time-decay or static+Elo)
-    lam_h_atk, lam_h_def = get_lambda_for_team(home_team, away_team, True, alpha)
-    lam_a_atk, lam_a_def = get_lambda_for_team(away_team, home_team, False, alpha)
+    data_source = "static_engine"
 
-    # Geometric mean base lambdas (consistent with v1 improvement)
-    lam_home = math.sqrt(lam_h_atk * lam_a_def)
-    lam_away = math.sqrt(lam_a_atk * lam_h_def)
+    # Step 1: Get base lambdas.
+    if use_dynamic:
+        # Lazy import avoids the circular dependency (dynamic_data imports
+        # MatchRecord/ELO_RATINGS from this module).
+        from dynamic_data import get_provider   # type: ignore
+        provider = get_provider(half_life_days=half_life_days)
+        dl_home, dl_away = provider.get_match_lambdas(home_team.name, away_team.name)
+        lam_home = math.sqrt(dl_home.lam_attack * dl_away.lam_defense)
+        lam_away = math.sqrt(dl_away.lam_attack * dl_home.lam_defense)
+        data_source = dl_home.data_source
+    else:
+        lam_h_atk, lam_h_def = get_lambda_for_team(home_team, away_team, True, alpha)
+        lam_a_atk, lam_a_def = get_lambda_for_team(away_team, home_team, False, alpha)
+        # Geometric mean base lambdas (consistent with v1 improvement)
+        lam_home = math.sqrt(lam_h_atk * lam_a_def)
+        lam_away = math.sqrt(lam_a_atk * lam_h_def)
 
     # Step 2: Apply WC 2026 modifiers
     lam_home, lam_away = apply_all_wc_modifiers(
@@ -729,6 +746,7 @@ def predict_match_v2(home_team: TeamProfile,
         "away":        away_team.name,
         "venue":       venue_city,
         "matchday":    matchday,
+        "data_source": data_source,
         "lam_home":    round(lam_home, 3),
         "lam_away":    round(lam_away, 3),
         "prob_h":      result["prob_h"],
@@ -818,22 +836,24 @@ def run_comparison_demo():
 
     # Mexico host advantage demo
     print(f"\n  ── Host Advantage Demo (Mexico in Guadalajara) ──")
-    lam_boosted = apply_host_advantage(lam_mexico,
-                                        TeamProfile("Mexico", is_host=True,
-                                                    host_cities=["Guadalajara","Monterrey"]),
-                                        "Guadalajara", boost_pct=0.08)
+    lam_boosted = apply_host_advantage(
+        lam_mexico,
+        TeamProfile("Mexico", is_host=True,
+                    host_cities=["Guadalajara", "Monterrey"]),
+        "Guadalajara", boost_pct=0.08,
+    )
     dc_boost = dixon_coles_predict(lam_boosted, lam_poland, rho=-0.13)
-    print(f"  Mexico λ without host boost: {lam_mexico:.3f}")
-    print(f"  Mexico λ with host boost:    {lam_boosted:.3f}  (+8%)")
-    print(f"  P(Mexico wins): {dc['prob_h']:.2f}%  →  {dc_boost['prob_h']:.2f}%")
+    print(f"  Mexico lambda without host boost: {lam_mexico:.3f}")
+    print(f"  Mexico lambda with host boost:    {lam_boosted:.3f}  (+8%)")
+    print(f"  P(Mexico wins): {dc['prob_h']:.2f}%  ->  {dc_boost['prob_h']:.2f}%")
 
-    print(f"\n  ── Kelly Criterion Demo (Quarter Kelly on bankroll €1000) ──")
+    print(f"\n  ── Kelly Criterion Demo (Quarter Kelly on bankroll 1000) ──")
     p_mexico = dc['prob_h'] / 100
     ev = calculate_ev(p_mexico, odd_1)
     full_k, frac_k = kelly_criterion(p_mexico, odd_1, fraction=0.25)
     print(f"  P(Mexico) = {p_mexico:.2%}  |  Odd = {odd_1}  |  EV = {ev:+.2%}")
-    print(f"  Full Kelly:     {full_k:.2%} of bankroll  = €{1000*full_k:.2f}")
-    print(f"  Quarter Kelly:  {frac_k:.2%} of bankroll  = €{1000*frac_k:.2f}  ← recommended")
+    print(f"  Full Kelly:     {full_k:.2%} of bankroll")
+    print(f"  Quarter Kelly:  {frac_k:.2%} of bankroll  <- recommended")
     print("\n" + "=" * 65)
 
 

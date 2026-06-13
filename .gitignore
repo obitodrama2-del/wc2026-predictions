@@ -1,0 +1,5 @@
+
+# Dynamic data cache (auto-generated)
+dynamic_data.sqlite
+dynamic_data.sqlite-*
+__pycache__/

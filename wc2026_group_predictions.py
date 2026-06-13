@@ -18,65 +18,69 @@ REQUEST_DELAY = 6.5   # sekonda midis kërkesave (free tier: max 10/min)
 # Bazuar në: FIFA ranking + forma e fundit ndërkombëtare (2023-2025)
 # scored_avg, conceded_avg, points_per_game
 TEAM_STATS_BASE = {
-    # ── TOP 10 ──────────────────────────────────────────────────
-    "argentina":          (2.5, 0.7, 2.4),
-    "france":             (2.3, 0.8, 2.3),
-    "england":            (2.1, 0.7, 2.2),
-    "brazil":             (2.1, 0.9, 2.1),
-    "portugal":           (2.4, 0.9, 2.2),
-    "spain":              (2.2, 0.6, 2.3),
-    "netherlands":        (2.0, 0.9, 2.1),
-    "germany":            (2.1, 1.0, 2.0),
-    "belgium":            (1.8, 0.9, 2.0),
-    "united states":      (1.6, 0.9, 1.8),
-    "usa":                (1.6, 0.9, 1.8),
-    # ── 11-25 ───────────────────────────────────────────────────
-    "mexico":             (1.7, 1.0, 1.9),
-    "colombia":           (1.8, 0.9, 1.9),
-    "uruguay":            (1.6, 0.9, 1.8),
-    "switzerland":        (1.7, 0.9, 1.9),
-    "japan":              (1.6, 1.0, 1.8),
-    "korea republic":     (1.5, 1.0, 1.7),
-    "south korea":        (1.5, 1.0, 1.7),
-    "morocco":            (1.4, 0.8, 1.7),
-    "turkey":             (1.6, 1.1, 1.7),
-    "senegal":            (1.5, 0.9, 1.7),
-    "croatia":            (1.5, 1.0, 1.7),
-    "austria":            (1.7, 1.0, 1.8),
-    "norway":             (1.8, 1.1, 1.7),
-    "czech republic":     (1.5, 1.1, 1.7),
-    "czechia":            (1.5, 1.1, 1.7),
-    "sweden":             (1.5, 1.1, 1.6),
-    "ecuador":            (1.5, 1.1, 1.7),
-    "iran":               (1.3, 1.0, 1.5),
-    "canada":             (1.4, 1.0, 1.6),
-    "scotland":           (1.5, 1.2, 1.5),
-    "algeria":            (1.4, 1.0, 1.6),
-    "ivory coast":        (1.5, 1.1, 1.6),
-    "côte d'ivoire":      (1.5, 1.1, 1.6),
-    "egypt":              (1.4, 1.0, 1.6),
-    "ghana":              (1.3, 1.2, 1.4),
-    "australia":          (1.3, 1.1, 1.5),
-    "paraguay":           (1.3, 1.2, 1.4),
-    "tunisia":            (1.2, 1.1, 1.4),
-    "bosnia & herzegovina": (1.4, 1.2, 1.5),
-    "bosnia-herzegovina": (1.4, 1.2, 1.5),
-    # ── 26-48 (më të dobët) ─────────────────────────────────────
-    "saudi arabia":       (1.2, 1.3, 1.3),
-    "south africa":       (1.1, 1.3, 1.2),
-    "new zealand":        (1.0, 1.4, 1.0),
-    "jordan":             (1.1, 1.3, 1.2),
-    "panama":             (1.0, 1.4, 1.1),
-    "iraq":               (1.1, 1.3, 1.2),
-    "cape verde":         (1.2, 1.2, 1.4),
-    "cape verde islands": (1.2, 1.2, 1.4),
-    "dr congo":           (1.2, 1.2, 1.4),
-    "congo dr":           (1.2, 1.2, 1.4),
-    "uzbekistan":         (1.1, 1.3, 1.3),
-    "haiti":              (0.8, 1.6, 0.8),
-    "curaçao":            (0.9, 1.5, 0.9),
-    "curacao":            (0.9, 1.5, 0.9),
-    "qatar":              (1.0, 1.5, 1.0),
+    # scored_avg, conceded_avg, points_per_game
+    # ── ELITE ───────────────────────────────────────────────────
+    "argentina":            (3.2, 0.5, 2.5),
+    "spain":                (2.8, 0.4, 2.4),
+    "france":               (2.6, 0.6, 2.4),
+    "brazil":               (2.8, 0.6, 2.3),
+    "england":              (2.3, 0.6, 2.3),
+    "portugal":             (2.6, 0.7, 2.3),
+    "germany":              (2.5, 0.7, 2.1),
+    "netherlands":          (2.2, 0.8, 2.1),
+    "belgium":              (2.0, 0.8, 2.0),
+    # ── SHUMË TË FORTË ──────────────────────────────────────────
+    "colombia":             (2.0, 0.9, 2.0),
+    "norway":               (2.0, 1.0, 1.9),
+    "mexico":               (1.8, 1.0, 1.9),
+    "austria":              (1.8, 0.9, 1.9),
+    "uruguay":              (1.8, 0.9, 1.9),
+    "switzerland":          (1.7, 0.9, 1.9),
+    "united states":        (1.7, 0.9, 1.8),
+    "usa":                  (1.7, 0.9, 1.8),
+    "japan":                (1.8, 1.0, 1.8),
+    # ── TË FORTË ────────────────────────────────────────────────
+    "korea republic":       (1.6, 1.0, 1.7),
+    "south korea":          (1.6, 1.0, 1.7),
+    "morocco":              (1.5, 0.8, 1.8),
+    "senegal":              (1.5, 0.9, 1.7),
+    "croatia":              (1.5, 1.0, 1.7),
+    "turkey":               (1.6, 1.1, 1.7),
+    "czech republic":       (1.5, 1.1, 1.7),
+    "czechia":              (1.5, 1.1, 1.7),
+    "sweden":               (1.5, 1.1, 1.6),
+    "ecuador":              (1.5, 1.1, 1.7),
+    "canada":               (1.4, 1.0, 1.6),
+    "ivory coast":          (1.5, 1.1, 1.6),
+    "côte d'ivoire":        (1.5, 1.1, 1.6),
+    "scotland":             (1.4, 1.2, 1.5),
+    "algeria":              (1.4, 1.0, 1.6),
+    "egypt":                (1.3, 1.0, 1.5),
+    # ── MESATARË ────────────────────────────────────────────────
+    "iran":                 (1.3, 1.0, 1.5),
+    "ghana":                (1.3, 1.2, 1.4),
+    "australia":            (1.3, 1.2, 1.5),
+    "paraguay":             (1.3, 1.2, 1.4),
+    "bosnia & herzegovina": (1.3, 1.2, 1.5),
+    "bosnia-herzegovina":   (1.3, 1.2, 1.5),
+    "tunisia":              (1.2, 1.2, 1.4),
+    "dr congo":             (1.1, 1.3, 1.3),
+    "congo dr":             (1.1, 1.3, 1.3),
+    "cape verde":           (1.1, 1.3, 1.3),
+    "cape verde islands":   (1.1, 1.3, 1.3),
+    "uzbekistan":           (1.0, 1.4, 1.2),
+    # ── TË DOBËT ────────────────────────────────────────────────
+    "saudi arabia":         (1.0, 1.4, 1.1),
+    "south africa":         (1.0, 1.5, 1.1),
+    "jordan":               (0.9, 1.5, 1.0),
+    "iraq":                 (0.9, 1.5, 1.0),
+    "new zealand":          (0.8, 1.6, 0.9),
+    "panama":               (0.8, 1.6, 0.9),
+    # ── SHUMË TË DOBËT ──────────────────────────────────────────
+    "qatar":                (0.7, 1.9, 0.8),
+    "haiti":                (0.6, 2.1, 0.6),
+    "curaçao":              (0.7, 2.0, 0.7),
+    "curacao":              (0.7, 2.0, 0.7),
 }
 
 from config import FOOTBALL_API_KEY as API_KEY  # type: ignore
@@ -237,8 +241,9 @@ def poisson_prob(lam: float, k: int) -> float:
 
 
 def predict(stats_h: dict, stats_a: dict, max_goals: int = 6) -> dict:
-    lam_h = (stats_h["goals_scored_avg"] + stats_a["goals_conceded_avg"]) / 2
-    lam_a = (stats_a["goals_scored_avg"] + stats_h["goals_conceded_avg"]) / 2
+    # Mesatare gjeometrike — diferencon më mirë ekipet e forta nga të dobëtat
+    lam_h = math.sqrt(stats_h["goals_scored_avg"] * stats_a["goals_conceded_avg"])
+    lam_a = math.sqrt(stats_a["goals_scored_avg"] * stats_h["goals_conceded_avg"])
 
     p_hw = p_d = p_aw = 0.0
     best_p = 0.0
@@ -252,9 +257,6 @@ def predict(stats_h: dict, stats_a: dict, max_goals: int = 6) -> dict:
         if p > best_p:
             best_p = p; best_s = (g_h, g_a)
 
-    bonus = (stats_h["points_per_game"] - stats_a["points_per_game"]) * 0.05
-    p_hw = min(max(p_hw + bonus, 0.01), 0.98)
-    p_aw = min(max(p_aw - bonus, 0.01), 0.98)
     total = p_hw + p_d + p_aw
 
     return {

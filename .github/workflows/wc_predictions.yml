@@ -1,0 +1,38 @@
+name: WC 2026 — Parashikimet Telegram
+
+on:
+  schedule:
+    # Ekzekutohet 3 herë në ditë gjatë WC 2026 (UTC)
+    # 07:00 UTC = para ndeshjeve të paradites
+    # 14:00 UTC = para ndeshjeve të mesditës
+    # 21:00 UTC = para ndeshjeve të mbrëmjes
+    - cron: "0 7 * * *"
+    - cron: "0 14 * * *"
+    - cron: "0 21 * * *"
+
+  # Mundëson ekzekutim manual nga GitHub UI
+  workflow_dispatch:
+
+jobs:
+  send-predictions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalo dependencies
+        run: pip install -r requirements.txt
+
+      - name: Dërgo parashikimet në Telegram
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+          ODDS_API_KEY:          ${{ secrets.ODDS_API_KEY }}
+          TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:      ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python send_predictions.py

@@ -137,6 +137,12 @@ def prepare_matches_data(group_matches: list, team_stats: dict,
         else:
             best_out, best_prob, best_odd = "2", pa, float(row.get("odd_2", 0))
 
+        # Kelly stake për outcomen më të mirë
+        kelly_map = {"1": float(row.get("kelly_1", 0)),
+                     "X": float(row.get("kelly_x", 0)),
+                     "2": float(row.get("kelly_2", 0))}
+        best_kelly = kelly_map.get(best_out, 0.0)
+
         results.append({
             "date":           date_str,
             "time":           time_str,
@@ -152,6 +158,7 @@ def prepare_matches_data(group_matches: list, team_stats: dict,
             "best_prob":      best_prob,
             "best_odd":       best_odd,
             "ev":             best_ev,
+            "kelly_stake":    best_kelly,
             "is_value":       row.get("value_bet", "") == "✅ YES",
         })
 

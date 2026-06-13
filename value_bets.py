@@ -8,6 +8,7 @@ import requests
 import pandas as pd
 import difflib
 from datetime import datetime, timezone
+from prediction_engine_v2 import kelly_criterion   # type: ignore
 
 # ─── KONFIGURIMI ──────────────────────────────────────────────
 from config import ODDS_API_KEY  # type: ignore   # https://the-odds-api.com
@@ -297,18 +298,35 @@ def calculate_value(df: pd.DataFrame) -> pd.DataFrame:
     df["ev_x"] = (px * df["odd_x"] - 1).round(4)
     df["ev_2"] = (p2 * df["odd_2"] - 1).round(4)
 
+    # ── Kelly Criterion (Quarter Kelly, bankroll €100) ──────────
+    KELLY_FRAC  = 0.25
+    BANKROLL    = 100.0
+    MIN_EV      = 0.04   # EV minimale për ta quajtur value bet të vërtetë
+
+    def calc_kelly(p_val, odd_val):
+        _, fk = kelly_criterion(float(p_val), float(odd_val), KELLY_FRAC)
+        return round(fk * BANKROLL, 2)
+
+    df["kelly_1"] = [calc_kelly(p, o) for p, o in zip(p1, df["odd_1"])]
+    df["kelly_x"] = [calc_kelly(p, o) for p, o in zip(px, df["odd_x"])]
+    df["kelly_2"] = [calc_kelly(p, o) for p, o in zip(p2, df["odd_2"])]
+
     df["value_bet"] = df.apply(
-        lambda r: "✅ YES" if max(r["ev_1"], r["ev_x"], r["ev_2"]) > 0 else "❌ NO",
+        lambda r: "✅ YES" if max(r["ev_1"], r["ev_x"], r["ev_2"]) >= MIN_EV else "❌ NO",
         axis=1
     )
 
     def best_pick(r):
-        opts = {"1 (Home)": r["ev_1"], "X (Draw)": r["ev_x"], "2 (Away)": r["ev_2"]}
-        best_k = max(opts, key=opts.get)
-        best_v = opts[best_k]
-        if best_v > 0:
-            return f"{best_k}  EV={best_v:+.2%}"
-        return f"{best_k}  EV={best_v:+.2%} (jo vlerë)"
+        opts = {
+            "1": (r["ev_1"], r["kelly_1"]),
+            "X": (r["ev_x"], r["kelly_x"]),
+            "2": (r["ev_2"], r["kelly_2"]),
+        }
+        best_k = max(opts, key=lambda k: opts[k][0])
+        best_ev, best_kl = opts[best_k]
+        if best_ev >= MIN_EV:
+            return f"{best_k}  EV={best_ev:+.2%}  Kelly=€{best_kl}"
+        return f"{best_k}  EV={best_ev:+.2%} (jo vlerë)"
 
     df["best_bet"] = df.apply(best_pick, axis=1)
     return df
@@ -386,81 +404,5 @@ def run(df_model: pd.DataFrame) -> pd.DataFrame:
     print("🔗 Duke bashkuar me modelin...")
     df_merged = merge_with_model(df_odds, df_model)
     if df_merged.empty:
-        print("  ⚠ Asnjë përputhje emrash mes API-së dhe modelit.")
-        print("  💡 Shto emrat e mungueshëm te NAME_MAP në krye të skedarit.")
-        return pd.DataFrame()
-    print(f"  ✓ {len(df_merged)} ndeshje të përputhura")
-
-    print("💰 Duke llogaritur Value Bets...")
-    df_final = calculate_value(df_merged)
-
-    print_value_bets(df_final)
-    return df_final
-
-
-# ── Shembull: si ta thirrësh nga wc2026_group_predictions.py ──
-#
-# from value_bets import run as find_value_bets
-#
-# # df_model duhet të ketë: home_team, away_team, prob_home_win, prob_draw, prob_away_win
-# df_value = find_value_bets(df_model)
-# df_value.to_csv("value_bets_output.csv", index=False)   # ruaj si CSV
-#
-# ─────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    # DEMO: testo me të dhëna fikse pa model të vërtetë
-    if ODDS_API_KEY == "VENDOS_CELESIN_TEND_KETU":
-        print("\n⚠  Merr çelësin API falas nga: https://the-odds-api.com")
-        print("   Pastaj zëvendëso ODDS_API_KEY në krye të skedarit.\n")
-
-        # Demo me DataFrame fiktiv
-        df_demo_model = pd.DataFrame([
-            {"home_team": "Brazil",        "away_team": "Morocco",
-             "prob_home_win": 55.0, "prob_draw": 25.0, "prob_away_win": 20.0},
-            {"home_team": "France",        "away_team": "Senegal",
-             "prob_home_win": 58.0, "prob_draw": 22.0, "prob_away_win": 20.0},
-            {"home_team": "Argentina",     "away_team": "Algeria",
-             "prob_home_win": 60.0, "prob_draw": 22.0, "prob_away_win": 18.0},
-            {"home_team": "Germany",       "away_team": "Ivory Coast",
-             "prob_home_win": 52.0, "prob_draw": 26.0, "prob_away_win": 22.0},
-        ])
-
-        df_demo_odds = pd.DataFrame([
-            {"home_team": "Brazil",    "away_team": "Morocco",
-             "match_date": "2026-06-13 17:00", "odd_1": 1.70, "odd_x": 3.60, "odd_2": 5.00},
-            {"home_team": "France",    "away_team": "Senegal",
-             "match_date": "2026-06-16 20:00", "odd_1": 1.65, "odd_x": 3.80, "odd_2": 5.50},
-            {"home_team": "Argentina", "away_team": "Algeria",
-             "match_date": "2026-06-17 23:00", "odd_1": 1.55, "odd_x": 4.00, "odd_2": 6.50},
-            {"home_team": "Germany",   "away_team": "Ivory Coast",
-             "match_date": "2026-06-14 23:00", "odd_1": 1.80, "odd_x": 3.50, "odd_2": 4.80},
-        ])
-
-        print("── DEMO MODE (koeficiente & probabilitete fikse) ─────────────\n")
-        df_merged = merge_with_model(df_demo_odds, df_demo_model)
-        df_final  = calculate_value(df_merged)
-        print_value_bets(df_final)
-        print_all_odds(df_final)
-    else:
-        # Çelësi është vendosur — thirr API-në dhe shfaq koeficientet + value bets
-        print("📡 Duke tërhequr koeficientet nga Bet365 (The Odds API)...")
-        try:
-            raw = fetch_bet365_odds()
-        except RuntimeError as e:
-            print(e)
-            exit(1)
-
-        df_odds = odds_to_dataframe(raw)
-        if df_odds.empty:
-            print("  ⚠ Nuk u gjetën koeficiente Bet365 për WC 2026.")
-            print("  💡 Verifikoni sport key: soccer_fifa_world_cup")
-            exit(0)
-
-        print(f"\n{'='*65}")
-        print(f"  📋  KOEFICIENTET BET365 — WC 2026  ({len(df_odds)} ndeshje)")
-        print(f"{'='*65}")
-        print(df_odds.to_string(index=False))
-
-        print("\n💡 Për Value Bets, importo dhe thirr run(df_model) me DataFrame-in e modelit.")
-        print("   Shembull:  from value_bets import run; df_value = run(df_model)")
+        print("  Asnje perputhje emrash mes API-se dhe modelit.")
+        print("  Shto emrat tek NAME_MAP ne krye te skedarit.")

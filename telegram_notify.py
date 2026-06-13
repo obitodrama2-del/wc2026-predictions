@@ -167,11 +167,13 @@ def format_best_combo(matches: list[dict], top_n: int = 5) -> str:
     ]
     for i, m in enumerate(top, 1):
         o = outcome_map.get(m.get("best_outcome", ""), "?")
+        kelly = m.get("kelly_stake", 0)
+        kelly_str = f"  Kelly: <b>€{kelly:.2f}</b>/€100" if kelly > 0 else ""
         lines.append(
             f"{i}. <b>{m['home_team']} vs {m['away_team']}</b>  "
             f"({m['date']} {m['time']})\n"
             f"   → <b>{o}</b>  Koef: <b>{m['best_odd']}</b>  "
-            f"Prob: <b>{m['best_prob']:.1f}%</b>"
+            f"Prob: <b>{m['best_prob']:.1f}%</b>{kelly_str}"
         )
 
     lines.append("─" * 16)

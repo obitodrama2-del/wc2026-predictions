@@ -234,38 +234,71 @@ def default_stats(team_name: str = "") -> dict:
     }
 
 
-# ─── POISSON ──────────────────────────────────────────────────
+# ─── MODELI DIXON-COLES (v2) ──────────────────────────────────
+# Importo motorin e ri — zëvendëson Poisson bazë
+from prediction_engine_v2 import (          # type: ignore
+    dixon_coles_predict,
+    apply_all_wc_modifiers,
+    TeamProfile,
+    ELO_RATINGS,
+)
 
-def poisson_prob(lam: float, k: int) -> float:
-    return (math.exp(-lam) * lam**k) / math.factorial(k)
+# Skuadrat pritëse dhe qytetet e tyre (për host advantage)
+HOST_PROFILES: dict[str, TeamProfile] = {
+    "united states": TeamProfile("united states", is_host=True,
+        host_cities=["New York","Los Angeles","Dallas","San Francisco",
+                     "Seattle","Boston","Kansas City","Atlanta","Houston","Miami"]),
+    "usa":           TeamProfile("usa", is_host=True,
+        host_cities=["New York","Los Angeles","Dallas","San Francisco",
+                     "Seattle","Boston","Kansas City","Atlanta","Houston","Miami"]),
+    "mexico":        TeamProfile("mexico", is_host=True,
+        host_cities=["Mexico City","Guadalajara","Monterrey"]),
+    "canada":        TeamProfile("canada", is_host=True,
+        host_cities=["Toronto","Vancouver"]),
+}
 
 
-def predict(stats_h: dict, stats_a: dict, max_goals: int = 6) -> dict:
-    # Mesatare gjeometrike — diferencon më mirë ekipet e forta nga të dobëtat
+def predict(stats_h: dict, stats_a: dict,
+            home_name: str = "", away_name: str = "",
+            venue_city: str = "", matchday: int = 1,
+            group_pts_h: int = 0, group_pts_a: int = 0,
+            max_goals: int = 7) -> dict:
+    """
+    Parashikim me Dixon-Coles + WC 2026 modifiers.
+    Prapavijë e plotë: lam gjeometrik → korrektim DC → host/lodhje/rotacion.
+    """
+    # Lambda gjeometrik bazë
     lam_h = math.sqrt(stats_h["goals_scored_avg"] * stats_a["goals_conceded_avg"])
     lam_a = math.sqrt(stats_a["goals_scored_avg"] * stats_h["goals_conceded_avg"])
 
-    p_hw = p_d = p_aw = 0.0
-    best_p = 0.0
-    best_s = (0, 0)
+    # Ndërto profiler për modifierët WC
+    h_key = home_name.strip().lower()
+    a_key = away_name.strip().lower()
 
-    for g_h, g_a in product(range(max_goals + 1), repeat=2):
-        p = poisson_prob(lam_h, g_h) * poisson_prob(lam_a, g_a)
-        if g_h > g_a:    p_hw += p
-        elif g_h == g_a: p_d  += p
-        else:            p_aw += p
-        if p > best_p:
-            best_p = p; best_s = (g_h, g_a)
+    home_profile = HOST_PROFILES.get(h_key,
+                   TeamProfile(home_name,
+                               elo_rating=ELO_RATINGS.get(h_key, 1500),
+                               group_points=group_pts_h))
+    away_profile = TeamProfile(away_name,
+                               elo_rating=ELO_RATINGS.get(a_key, 1500),
+                               group_points=group_pts_a)
+    home_profile.group_points = group_pts_h
 
-    total = p_hw + p_d + p_aw
+    # Zbato modifierët WC (host, lodhje, rotacion)
+    lam_h, lam_a = apply_all_wc_modifiers(
+        lam_h, lam_a, home_profile, away_profile, venue_city, matchday
+    )
+
+    # Dixon-Coles me ρ = -0.13
+    dc = dixon_coles_predict(lam_h, lam_a, rho=-0.13, max_goals=max_goals)
 
     return {
-        "score":    f"{best_s[0]}-{best_s[1]}",
-        "prob_h":   round(p_hw / total * 100, 1),
-        "prob_d":   round(p_d  / total * 100, 1),
-        "prob_a":   round(p_aw / total * 100, 1),
-        "lam_h":    round(lam_h, 2),
-        "lam_a":    round(lam_a, 2),
+        "score":  dc["best_score"],
+        "prob_h": dc["prob_h"],
+        "prob_d": dc["prob_d"],
+        "prob_a": dc["prob_a"],
+        "lam_h":  round(lam_h, 3),
+        "lam_a":  round(lam_a, 3),
     }
 
 
@@ -345,18 +378,24 @@ def build_model_dataframe(group_matches: list[dict],
             continue
         hid   = m["homeTeam"]["id"]
         aid   = m["awayTeam"]["id"]
-        # Përdor emrin e plotë (jo shortName) për përputhje me Odds API
         hname = m["homeTeam"]["name"]
         aname = m["awayTeam"]["name"]
         sh = team_stats.get(hid, default_stats(hname))
         sa = team_stats.get(aid, default_stats(aname))
-        p  = predict(sh, sa)
+        # Matchday nga faza (GROUP_STAGE ndeshja 1/2/3)
+        matchday = m.get("matchday", 1) or 1
+        venue = (m.get("venue") or {}).get("city", "")
+        p  = predict(sh, sa,
+                     home_name=hname, away_name=aname,
+                     venue_city=venue, matchday=matchday)
         rows.append({
             "home_team":      hname,
             "away_team":      aname,
             "prob_home_win":  p["prob_h"],
             "prob_draw":      p["prob_d"],
             "prob_away_win":  p["prob_a"],
+            "lam_h":          p["lam_h"],
+            "lam_a":          p["lam_a"],
         })
 
     df = pd.DataFrame(rows)
@@ -380,7 +419,7 @@ def main():
     total     = len(group_matches)
     finished  = sum(1 for m in group_matches if m["status"] == "FINISHED")
     scheduled = total - finished
-    print(f"  ✓ {total} ndeshje gjithsej: {finished} të luajtura, {scheduled} të planifikuara")
+    print(f"  OK {total} ndeshje: {finished} luajtura, {scheduled} planifikuar")
 
     print("📡 Duke ndërtuar statistikat...")
     team_stats = build_team_stats(finished_matches)

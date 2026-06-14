@@ -10,6 +10,28 @@ from config import TELEGRAM_BOT_TOKEN as BOT_TOKEN, TELEGRAM_CHAT_ID as CHAT_ID 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
+# ─── NORMALIZIM PROBABILITETI (mbrojtje nga shkalla e gabuar) ──
+def prob_frac(p) -> float:
+    """
+    Kthen ÇDO probabilitet në fraksion [0,1], pavarësisht shkallës hyrëse.
+        0.7569  → 0.7569   (fraksion)
+        75.69   → 0.7569   (përqindje)
+        7569    → 0.7569   (përqindje e shumëzuar gabimisht me 100)
+    Kjo e bën të pamundur shfaqjen e ">100%" edhe nëse një burim e fryn vlerën.
+    """
+    p = float(p or 0.0)
+    if p < 0:
+        return 0.0
+    while p > 1.0:
+        p /= 100.0
+    return min(p, 1.0)
+
+
+def prob_pct(p) -> float:
+    """Probabilitet i normalizuar si përqindje 0–100."""
+    return prob_frac(p) * 100.0
+
+
 # ─── DËRGIMI I MESAZHIT ───────────────────────────────────────
 
 def send_message(text: str, parse_mode: str = "HTML") -> bool:
@@ -92,7 +114,7 @@ def format_prediction_message(match: dict) -> str:
         f"   1={match['odd_1']}  X={match['odd_x']}  2={match['odd_2']}\n"
         f"\n"
         f"{ev_emoji} <b>Parashikimi:</b> {outcome_label}\n"
-        f"   Probabilitet: <b>{match['best_prob']:.1f}%</b>  |  "
+        f"   Probabilitet: <b>{prob_pct(match['best_prob']):.1f}%</b>  |  "
         f"Koeficient: <b>{match['best_odd']}</b>\n"
         f"   Expected Value: <b>{ev:+.1%}</b>\n"
         f"{'─' * 28}\n"
@@ -145,21 +167,22 @@ def format_best_combo(matches: list[dict], top_n: int = 5) -> str:
     """
     import math
 
-    # Filtro vetëm ato me EV > 0 dhe probabilitet të mjaftueshëm
-    candidates = [m for m in matches if m.get("ev", 0) > 0 and m.get("best_prob", 0) > 20]
+    # Filtro vetëm ato me EV > 0 dhe probabilitet të mjaftueshëm (≥20%)
+    candidates = [m for m in matches if m.get("ev", 0) > 0 and prob_frac(m.get("best_prob", 0)) > 0.20]
 
     if not candidates:
         candidates = sorted(matches, key=lambda x: x.get("ev", -99), reverse=True)[:top_n]
 
     # Sorto sipas: probabilitet × koeficient (Expected Value absolut)
-    candidates.sort(key=lambda x: x.get("best_prob", 0) / 100 * x.get("best_odd", 1), reverse=True)
+    candidates.sort(key=lambda x: prob_frac(x.get("best_prob", 0)) * x.get("best_odd", 1), reverse=True)
     top = candidates[:top_n]
 
     outcome_map = {"1": "1", "X": "X", "2": "2"}
     combo_odd = 1.0
     for m in top:
         combo_odd *= m.get("best_odd", 1)
-    combo_prob = math.prod(m.get("best_prob", 0) / 100 for m in top) * 100
+    # Probabiliteti i kombos = prodhimi i fraksioneve (gjithmonë ≤ 100%)
+    combo_prob = math.prod(prob_frac(m.get("best_prob", 0)) for m in top) * 100
 
     lines = [
         "🎯 <b>KOMBINIMI MË I MIRË — WC 2026</b>",
@@ -173,7 +196,7 @@ def format_best_combo(matches: list[dict], top_n: int = 5) -> str:
             f"{i}. <b>{m['home_team']} vs {m['away_team']}</b>  "
             f"({m['date']} {m['time']})\n"
             f"   → <b>{o}</b>  Koef: <b>{m['best_odd']}</b>  "
-            f"Prob: <b>{m['best_prob']:.1f}%</b>{kelly_str}"
+            f"Prob: <b>{prob_pct(m['best_prob']):.1f}%</b>{kelly_str}"
         )
 
     lines.append("─" * 16)

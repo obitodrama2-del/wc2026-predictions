@@ -283,12 +283,14 @@ def calculate_value(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    # Probabilitetet nga modeli (janë në %, kthejini në [0,1])
+    # Probabilitetet nga modeli → fraksion [0,1], pavarësisht shkallës.
+    #   0.76 → 0.76 | 76 → 0.76 | 7600 (×100 gabimisht) → 0.76
     def to_prob(col):
-        vals = df[col]
-        if vals.max() > 1.5:   # janë në % (0-100)
-            return vals / 100
-        return vals
+        vals = df[col].astype(float)
+        # Ndaj me 100 sa herë të duhet derisa të bjerë në intervalin e pritur.
+        while vals.max() > 1.5:
+            vals = vals / 100.0
+        return vals.clip(lower=0.0, upper=1.0)
 
     p1 = to_prob("prob_home_win")
     px = to_prob("prob_draw")

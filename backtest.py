@@ -33,7 +33,16 @@ import math
 import sys
 from typing import Optional
 
-from wc2026_group_predictions import predict, default_stats   # type: ignore
+from wc2026_group_predictions import predict, default_stats, TEAM_STATS_BASE   # type: ignore
+
+# Ekipe që s'u gjetën në TEAM_STATS_BASE (bien te vlerat default 1.2/1.2).
+MISSING_TEAMS: set[str] = set()
+
+
+def _check_known(*names: str) -> None:
+    for nm in names:
+        if nm.strip().lower() not in TEAM_STATS_BASE:
+            MISSING_TEAMS.add(nm)
 
 
 # ── Rezultate shembull (ilustrative — zëvendësoji me të tuat) ──
@@ -63,6 +72,7 @@ SAMPLE_RESULTS: list[tuple[str, str, int, int]] = [
 
 def model_probs(home: str, away: str) -> tuple[float, float, float]:
     """Kthen (p1, pX, p2) si fraksione [0,1] nga modeli aktual."""
+    _check_known(home, away)
     sh = default_stats(home)
     sa = default_stats(away)
     p = predict(sh, sa, home_name=home, away_name=away)
@@ -202,6 +212,13 @@ def print_report(res: dict, show_detail: bool = True) -> None:
     else:
         print("  ✗ Modeli NUK e mund bazën naive — duhet rishikim.")
     print("=" * 50)
+
+    if MISSING_TEAMS:
+        print(f"\n  ⚠ {len(MISSING_TEAMS)} ekipe s'u gjetën në TEAM_STATS_BASE")
+        print("    (përdorën vlera default 1.2/1.2 → parashikim i dobët për to):")
+        for nm in sorted(MISSING_TEAMS):
+            print(f"      • {nm}")
+        print("    Shto këto në TEAM_STATS_BASE për rezultate më të sakta.")
 
 
 def main():

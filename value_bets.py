@@ -4,6 +4,7 @@ Tërheq koeficientet nga Bet365 (The Odds API) dhe i krahason
 me probabilitetet e modelit Poisson për të gjetur Value Bets.
 """
 
+import os
 import requests
 import pandas as pd
 import difflib
@@ -304,6 +305,15 @@ def calculate_value(df: pd.DataFrame) -> pd.DataFrame:
     KELLY_FRAC  = 0.25
     BANKROLL    = 100.0
     MIN_EV      = 0.04   # EV minimale për ta quajtur value bet të vërtetë
+    # ── Filtra anti-longshot (8.6) ──────────────────────────────
+    # Te kuota shumë të larta / probabilitete shumë të vogla, vlerësimi i
+    # modelit në bisht është i pasigurt → "vlera" del e rreme (p.sh. baste
+    # te Curaçao kundër Gjermanisë). I injorojmë këto si value bet.
+    MAX_ODD  = float(os.environ.get("VALUE_MAX_ODD",  "6.0"))
+    MIN_PROB = float(os.environ.get("VALUE_MIN_PROB", "0.15"))
+
+    # Ruaj probabilitetet si kolona (për filtrim dhe për favoritin e modelit).
+    df["p_1"], df["p_x"], df["p_2"] = list(p1), list(px), list(p2)
 
     def calc_kelly(p_val, odd_val):
         _, fk = kelly_criterion(float(p_val), float(odd_val), KELLY_FRAC)
@@ -313,22 +323,31 @@ def calculate_value(df: pd.DataFrame) -> pd.DataFrame:
     df["kelly_x"] = [calc_kelly(p, o) for p, o in zip(px, df["odd_x"])]
     df["kelly_2"] = [calc_kelly(p, o) for p, o in zip(p2, df["odd_2"])]
 
+    def _eligible_ev(ev, odd, p):
+        """EV vetëm nëse kuota ≤ MAX_ODD DHE prob ≥ MIN_PROB; ndryshe −99 (jashtë lojës)."""
+        return ev if (float(odd) <= MAX_ODD and float(p) >= MIN_PROB) else -99.0
+
+    df["eev_1"] = [_eligible_ev(e, o, p) for e, o, p in zip(df["ev_1"], df["odd_1"], p1)]
+    df["eev_x"] = [_eligible_ev(e, o, p) for e, o, p in zip(df["ev_x"], df["odd_x"], px)]
+    df["eev_2"] = [_eligible_ev(e, o, p) for e, o, p in zip(df["ev_2"], df["odd_2"], p2)]
+
     df["value_bet"] = df.apply(
-        lambda r: "✅ YES" if max(r["ev_1"], r["ev_x"], r["ev_2"]) >= MIN_EV else "❌ NO",
+        lambda r: "✅ YES" if max(r["eev_1"], r["eev_x"], r["eev_2"]) >= MIN_EV else "❌ NO",
         axis=1
     )
 
     def best_pick(r):
-        opts = {
-            "1": (r["ev_1"], r["kelly_1"]),
-            "X": (r["ev_x"], r["kelly_x"]),
-            "2": (r["ev_2"], r["kelly_2"]),
-        }
-        best_k = max(opts, key=lambda k: opts[k][0])
-        best_ev, best_kl = opts[best_k]
+        # Vlera vetëm nga opsionet e pranueshme (jo longshot).
+        elig = {"1": (r["eev_1"], r["kelly_1"]),
+                "X": (r["eev_x"], r["kelly_x"]),
+                "2": (r["eev_2"], r["kelly_2"])}
+        best_k = max(elig, key=lambda k: elig[k][0])
+        best_ev, best_kl = elig[best_k]
         if best_ev >= MIN_EV:
             return f"{best_k}  EV={best_ev:+.2%}  Kelly=€{best_kl}"
-        return f"{best_k}  EV={best_ev:+.2%} (jo vlerë)"
+        # Pa vlerë të pranueshme → trego favoritin e modelit (prob më e lartë), pa e quajtur vlerë.
+        fav = max({"1": r["p_1"], "X": r["p_x"], "2": r["p_2"]}, key=lambda k: {"1": r["p_1"], "X": r["p_x"], "2": r["p_2"]}[k])
+        return f"{fav}  (jo vlerë)"
 
     df["best_bet"] = df.apply(best_pick, axis=1)
     return df

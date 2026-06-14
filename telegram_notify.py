@@ -3,11 +3,19 @@
 Dërgon parashikimet e ndeshjeve në Telegram.
 """
 
+import os
 import requests
 
 # ─── KONFIGURIMI ──────────────────────────────────────────────
 from config import TELEGRAM_BOT_TOKEN as BOT_TOKEN, TELEGRAM_CHAT_ID as CHAT_ID  # type: ignore
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+# ─── Filtra anti-longshot (të njëjtë me value_bets.py) ─────────
+# Vlejnë për TË GJITHA parashikimet: asnjë bast me kuotë shumë të lartë
+# ose probabilitet shumë të vogël s'futet në kombo apo në value bets.
+VALUE_MAX_ODD  = float(os.environ.get("VALUE_MAX_ODD",  "6.0"))
+VALUE_MIN_PROB = float(os.environ.get("VALUE_MIN_PROB", "0.15"))
+VALUE_MIN_EV   = float(os.environ.get("VALUE_MIN_EV",   "0.04"))
 
 
 # ─── NORMALIZIM PROBABILITETI (mbrojtje nga shkalla e gabuar) ──
@@ -167,11 +175,20 @@ def format_best_combo(matches: list[dict], top_n: int = 5) -> str:
     """
     import math
 
-    # Filtro vetëm ato me EV > 0 dhe probabilitet të mjaftueshëm (≥20%)
-    candidates = [m for m in matches if m.get("ev", 0) > 0 and prob_frac(m.get("best_prob", 0)) > 0.20]
+    # Filtra anti-longshot për TË GJITHA ndeshjet: EV ≥ minimum, kuotë ≤ tavan,
+    # probabilitet ≥ prag. Kjo përjashton baste si "Curaçao kundër Gjermanisë".
+    def _eligible(m) -> bool:
+        return (m.get("ev", -99) >= VALUE_MIN_EV
+                and m.get("best_odd", 99) <= VALUE_MAX_ODD
+                and prob_frac(m.get("best_prob", 0)) >= VALUE_MIN_PROB)
+
+    candidates = [m for m in matches if _eligible(m)]
 
     if not candidates:
-        candidates = sorted(matches, key=lambda x: x.get("ev", -99), reverse=True)[:top_n]
+        # Asnjë bast me vlerë të pranueshme → mos sugjero kombo me longshot-e.
+        return ("🎯 <b>KOMBINIMI MË I MIRË — WC 2026</b>\n" + "─" * 32 +
+                "\n\nNuk u gjet asnjë bast me vlerë të sigurt sot.\n"
+                "⚠️ <i>Më mirë asnjë bast sesa një longshot.</i>")
 
     # Sorto sipas: probabilitet × koeficient (Expected Value absolut)
     candidates.sort(key=lambda x: prob_frac(x.get("best_prob", 0)) * x.get("best_odd", 1), reverse=True)

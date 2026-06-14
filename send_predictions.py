@@ -124,18 +124,23 @@ def prepare_matches_data(group_matches: list, team_stats: dict,
         if ph < 1.5:   # janë 0-1, kthejini në %
             ph *= 100; px *= 100; pa *= 100
 
-        # EV dhe parashikimi më i mirë
-        ev1 = float(row.get("ev_1", -99))
-        evx = float(row.get("ev_x", -99))
-        ev2 = float(row.get("ev_2", -99))
+        # EV i PRANUESHËM (eev_*) — përjashton longshot-et (kuota shumë të larta /
+        # prob shumë të vogla). Bie mbrapsht te ev_* nëse kolonat e reja mungojnë.
+        ev1 = float(row.get("eev_1", row.get("ev_1", -99)))
+        evx = float(row.get("eev_x", row.get("ev_x", -99)))
+        ev2 = float(row.get("eev_2", row.get("ev_2", -99)))
 
-        best_ev  = max(ev1, evx, ev2)
-        if best_ev == ev1:
-            best_out, best_prob, best_odd = "1", ph, float(row.get("odd_1", 0))
-        elif best_ev == evx:
-            best_out, best_prob, best_odd = "X", px, float(row.get("odd_x", 0))
+        best_ev = max(ev1, evx, ev2)
+        prob_map = {"1": (ph, float(row.get("odd_1", 0))),
+                    "X": (px, float(row.get("odd_x", 0))),
+                    "2": (pa, float(row.get("odd_2", 0)))}
+        if best_ev >= 0.04:
+            # Ka vlerë të pranueshme → zgjidh atë.
+            best_out = "1" if best_ev == ev1 else "X" if best_ev == evx else "2"
         else:
-            best_out, best_prob, best_odd = "2", pa, float(row.get("odd_2", 0))
+            # Pa vlerë → trego favoritin e modelit (prob më e lartë), jo longshot.
+            best_out = max(prob_map, key=lambda k: prob_map[k][0])
+        best_prob, best_odd = prob_map[best_out]
 
         # Kelly stake për outcomen më të mirë
         kelly_map = {"1": float(row.get("kelly_1", 0)),

@@ -85,6 +85,21 @@ class TeamProfile:
 
 # Current FIFA/WC Elo ratings (approximate, June 2026)
 ELO_RATINGS: dict[str, float] = {
+    # ── Aliase emrash + ekipe shtesë (shmangin rënien në 1500) ──
+    "usa":           1880,   # = united states
+    "south korea":   1815,   # = korea republic
+    "côte d'ivoire": 1760,   # = ivory coast
+    "congo dr":      1610,   # = dr congo
+    "cape verde islands": 1605,
+    "curaçao":       1510,
+    "czech republic":1790,
+    "czechia":       1790,
+    "sweden":        1800,
+    "scotland":      1760,
+    "paraguay":      1760,
+    "tunisia":       1740,
+    "bosnia & herzegovina": 1730,
+    "bosnia-herzegovina":   1730,
     "argentina":     2082,
     "france":        2005,
     "england":       1990,

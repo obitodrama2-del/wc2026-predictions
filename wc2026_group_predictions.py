@@ -258,6 +258,11 @@ HOST_PROFILES: dict[str, TeamProfile] = {
 }
 
 
+# Pesha e Elo-s në përzierjen e lambda-ve (0=vetëm tabela, 1=vetëm Elo).
+# 0.6 jep favoritë realistë pa injoruar formën/golat e tabelës.
+ELO_BLEND_WEIGHT = float(os.environ.get("ELO_BLEND_WEIGHT", "0.6"))
+
+
 def predict(stats_h: dict, stats_a: dict,
             home_name: str = "", away_name: str = "",
             venue_city: str = "", matchday: int = 1,
@@ -267,13 +272,27 @@ def predict(stats_h: dict, stats_a: dict,
     Parashikim me Dixon-Coles + WC 2026 modifiers.
     Prapavijë e plotë: lam gjeometrik → korrektim DC → host/lodhje/rotacion.
     """
-    # Lambda gjeometrik bazë
+    # Lambda gjeometrik bazë (nga sulm/mbrojtje e tabelës ose të dhënave live)
     lam_h = math.sqrt(stats_h["goals_scored_avg"] * stats_a["goals_conceded_avg"])
     lam_a = math.sqrt(stats_a["goals_scored_avg"] * stats_h["goals_conceded_avg"])
 
-    # Ndërto profiler për modifierët WC
     h_key = home_name.strip().lower()
     a_key = away_name.strip().lower()
+
+    # ── Peshim me Elo: zhvendos epërsinë drejt fuqisë relative ──
+    # PA këtë, mbrojtjet elite i shtypin të gjitha lambdat te ~1.2 dhe
+    # favoriti mund të dalë underdog. Mbajmë totalin e golave konstant
+    # dhe rishpërndajmë sipas probabilitetit Elo vs proxy-t aktual.
+    elo_h = ELO_RATINGS.get(h_key, 1500)
+    elo_a = ELO_RATINGS.get(a_key, 1500)
+    p_elo  = 1.0 / (1.0 + 10.0 ** (-(elo_h - elo_a) / 400.0))   # P(home) sipas Elo
+    p_pois = lam_h / (lam_h + lam_a) if (lam_h + lam_a) > 0 else 0.5
+    p_mix  = (1.0 - ELO_BLEND_WEIGHT) * p_pois + ELO_BLEND_WEIGHT * p_elo
+    total  = lam_h + lam_a
+    lam_h  = max(0.15, p_mix * total)
+    lam_a  = max(0.15, (1.0 - p_mix) * total)
+
+    # Ndërto profiler për modifierët WC
 
     home_profile = HOST_PROFILES.get(h_key,
                    TeamProfile(home_name,
@@ -421,53 +440,4 @@ def main():
     scheduled = total - finished
     print(f"  OK {total} ndeshje: {finished} luajtura, {scheduled} planifikuar")
 
-    print("📡 Duke ndërtuar statistikat...")
-    team_stats = build_team_stats(finished_matches)
-    team_names = {}
-    for m in group_matches:
-        for side in ("homeTeam", "awayTeam"):
-            tid = m[side]["id"]
-            team_names[tid] = m[side].get("shortName") or m[side]["name"]
-
-    teams_with_data = len([t for t in team_names if t in team_stats and team_stats[t]["played"] > 0])
-    print(f"  ✓ Statistika WC disponibël për {teams_with_data}/{len(team_names)} skuadra")
-
-    # Plotëso me historikun e ndeshjeve të fundit për skuadrat pa të dhëna WC
-    missing = [tid for tid in team_names if tid not in team_stats or team_stats[tid]["played"] == 0]
-    if missing:
-        cache = load_cache()
-    print(f"  📡 Duke marrë historikun për {len(missing)} skuadra pa të dhëna WC...")
-    cached_count = sum(1 for tid in missing if f"team_{tid}_matches" in cache)
-    if cached_count:
-        print(f"  💾 {cached_count} skuadra nga cache lokale (të shpejta)")
-    for i, tid in enumerate(missing):
-            recent = get_team_recent_matches(tid, cache, limit=10)
-            if recent:
-                fake_finished = [m for m in recent
-                                 if m["score"]["fullTime"]["home"] is not None]
-                if fake_finished:
-                    extra = build_team_stats(fake_finished)
-                    if tid in extra:
-                        team_stats[tid] = extra[tid]
-                        team_stats[tid]["source"] = "historik"
-            if (i + 1) % 8 == 0:
-                print(f"    {i+1}/{len(missing)}...")
-    save_cache(cache)
-    print(f"  💾 Cache u ruajt — herën tjetër do jetë i shpejtë")
-
-    now_with_data = len([t for t in team_names if t in team_stats and team_stats[t]["played"] > 0])
-    print(f"  ✓ Statistika totale: {now_with_data}/{len(team_names)} skuadra")
-
-    print("\n  LEGJENDË:  📊 = të dhëna WC  |  📈 = historik i fundit  |  🔮 = pa të dhëna")
-    print("             H% = fitore home  B% = barazim  A% = fitore away")
-
-    print_group_predictions(group_matches, team_stats, team_names)
-
-    print(f"\n{'─'*70}")
-    print("  ✅ Parashikimet u gjeneruan.")
-    print("  ⚠ Parashikimet janë probabilistike, jo të sigurta.")
-    print(f"{'─'*70}\n")
-
-
-if __name__ == "__main__":
-    main()
+ 

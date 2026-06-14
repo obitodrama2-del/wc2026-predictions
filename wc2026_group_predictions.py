@@ -258,9 +258,31 @@ HOST_PROFILES: dict[str, TeamProfile] = {
 }
 
 
-# Pesha e Elo-s në përzierjen e lambda-ve (0=vetëm tabela, 1=vetëm Elo).
-# 0.6 jep favoritë realistë pa injoruar formën/golat e tabelës.
-ELO_BLEND_WEIGHT = float(os.environ.get("ELO_BLEND_WEIGHT", "0.6"))
+# ── Parametrat e kalibrimit të lambda-ve ──────────────────────
+# Pesha e Elo-s në përzierje (0=vetëm tabela, 1=vetëm Elo).
+#   ELO_BLEND_WEIGHT  → kur s'ka të dhëna live (tabela statike).
+#   ELO_WEIGHT_LIVE   → kur ka formë reale (≥ MIN_LIVE ndeshje) → besohet më shumë forma.
+ELO_BLEND_WEIGHT = float(os.environ.get("ELO_BLEND_WEIGHT", "0.50"))
+ELO_WEIGHT_LIVE  = float(os.environ.get("ELO_WEIGHT_LIVE",  "0.30"))
+MIN_LIVE_MATCHES = int(os.environ.get("MIN_LIVE_MATCHES", "5"))
+
+# Mesatarja e golave për ekip (bazë e modelit shumëzues).
+MU_GOALS = float(os.environ.get("MU_GOALS", "1.35"))
+# Tkurrja drejt mesatares (0=të gjithë mesatarë, 1=pa tkurrje → shpërthen).
+STRENGTH_SHRINK = float(os.environ.get("STRENGTH_SHRINK", "0.50"))
+# Kufijtë e λ-së për qëndrueshmëri (shmang skore absurde).
+LAMBDA_MIN, LAMBDA_MAX = 0.25, 3.30
+
+# Mesataret e ligës, të nxjerra një herë nga tabela (auto-kalibrim).
+_LEAGUE_ATTACK  = sum(v[0] for v in TEAM_STATS_BASE.values()) / max(1, len(TEAM_STATS_BASE))
+_LEAGUE_DEFENSE = sum(v[1] for v in TEAM_STATS_BASE.values()) / max(1, len(TEAM_STATS_BASE))
+
+
+def _strength(value: float, league_avg: float) -> float:
+    """Forcë relative e tkurrur drejt 1.0: 1 + shrink·(value/avg − 1)."""
+    if league_avg <= 0:
+        return 1.0
+    return 1.0 + STRENGTH_SHRINK * (value / league_avg - 1.0)
 
 
 def predict(stats_h: dict, stats_a: dict,
@@ -272,25 +294,37 @@ def predict(stats_h: dict, stats_a: dict,
     Parashikim me Dixon-Coles + WC 2026 modifiers.
     Prapavijë e plotë: lam gjeometrik → korrektim DC → host/lodhje/rotacion.
     """
-    # Lambda gjeometrik bazë (nga sulm/mbrojtje e tabelës ose të dhënave live)
-    lam_h = math.sqrt(stats_h["goals_scored_avg"] * stats_a["goals_conceded_avg"])
-    lam_a = math.sqrt(stats_a["goals_scored_avg"] * stats_h["goals_conceded_avg"])
+    # ── Lambda bazë: modeli shumëzues i kalibruar me forcë të tkurrur ──
+    # λ_h = sulm_h × mbrojtje_a × MU.  Forcat tkurren drejt 1.0 që
+    # mospërputhjet të mos shpërthejnë (p.sh. λ=5), por favoriti të mbetet favorit.
+    att_h = _strength(stats_h["goals_scored_avg"],   _LEAGUE_ATTACK)
+    def_h = _strength(stats_h["goals_conceded_avg"], _LEAGUE_DEFENSE)
+    att_a = _strength(stats_a["goals_scored_avg"],   _LEAGUE_ATTACK)
+    def_a = _strength(stats_a["goals_conceded_avg"], _LEAGUE_DEFENSE)
+    lam_h = max(0.1, att_h * def_a * MU_GOALS)
+    lam_a = max(0.1, att_a * def_h * MU_GOALS)
 
     h_key = home_name.strip().lower()
     a_key = away_name.strip().lower()
 
     # ── Peshim me Elo: zhvendos epërsinë drejt fuqisë relative ──
-    # PA këtë, mbrojtjet elite i shtypin të gjitha lambdat te ~1.2 dhe
-    # favoriti mund të dalë underdog. Mbajmë totalin e golave konstant
-    # dhe rishpërndajmë sipas probabilitetit Elo vs proxy-t aktual.
+    # Pesha ulet automatikisht kur ka formë reale (xG/gola nga ndeshjet e fundit),
+    # sepse atëherë të dhënat live janë më informuese se renditja Elo.
+    played = min(int(stats_h.get("played", 0)), int(stats_a.get("played", 0)))
+    elo_w = ELO_WEIGHT_LIVE if played >= MIN_LIVE_MATCHES else ELO_BLEND_WEIGHT
+
     elo_h = ELO_RATINGS.get(h_key, 1500)
     elo_a = ELO_RATINGS.get(a_key, 1500)
     p_elo  = 1.0 / (1.0 + 10.0 ** (-(elo_h - elo_a) / 400.0))   # P(home) sipas Elo
     p_pois = lam_h / (lam_h + lam_a) if (lam_h + lam_a) > 0 else 0.5
-    p_mix  = (1.0 - ELO_BLEND_WEIGHT) * p_pois + ELO_BLEND_WEIGHT * p_elo
+    p_mix  = (1.0 - elo_w) * p_pois + elo_w * p_elo
     total  = lam_h + lam_a
-    lam_h  = max(0.15, p_mix * total)
-    lam_a  = max(0.15, (1.0 - p_mix) * total)
+    lam_h  = p_mix * total
+    lam_a  = (1.0 - p_mix) * total
+
+    # Clamp për qëndrueshmëri (shmang skore absurde nga vlera ekstreme).
+    lam_h = max(LAMBDA_MIN, min(lam_h, LAMBDA_MAX))
+    lam_a = max(LAMBDA_MIN, min(lam_a, LAMBDA_MAX))
 
     # Ndërto profiler për modifierët WC
 

@@ -70,11 +70,23 @@ SAMPLE_RESULTS: list[tuple[str, str, int, int]] = [
 # NDIHMËS
 # ══════════════════════════════════════════════════════════════
 
+# Nëse True, statistikat merren nga shtresa dinamike (xG/gola live nga API-Sports)
+# në vend të tabelës statike. Vendoset nga flag-u --dynamic.
+USE_DYNAMIC = False
+
+
 def model_probs(home: str, away: str) -> tuple[float, float, float]:
     """Kthen (p1, pX, p2) si fraksione [0,1] nga modeli aktual."""
     _check_known(home, away)
-    sh = default_stats(home)
-    sa = default_stats(away)
+    if USE_DYNAMIC:
+        # xG/gola live + time-decay (kërkon APISPORTS_KEY). Bie te statike vetë
+        # brenda get_dynamic_stats nëse s'ka çelës ose të dhëna.
+        from dynamic_data import get_dynamic_stats   # type: ignore
+        sh = get_dynamic_stats(home, away, is_home=True)
+        sa = get_dynamic_stats(away, home, is_home=False)
+    else:
+        sh = default_stats(home)
+        sa = default_stats(away)
     p = predict(sh, sa, home_name=home, away_name=away)
     return p["prob_h"] / 100.0, p["prob_d"] / 100.0, p["prob_a"] / 100.0
 
@@ -222,14 +234,20 @@ def print_report(res: dict, show_detail: bool = True) -> None:
 
 
 def main():
-    if len(sys.argv) > 1:
-        path = sys.argv[1]
+    global USE_DYNAMIC
+    args = [a for a in sys.argv[1:] if a != "--dynamic"]
+    USE_DYNAMIC = "--dynamic" in sys.argv
+
+    if args:
+        path = args[0]
         print(f"Duke lexuar rezultatet nga: {path}")
         matches = load_csv(path)
     else:
         print("Duke përdorur rezultatet SHEMBULL (jep një CSV për të tuat).")
         matches = SAMPLE_RESULTS
 
+    mode = "xG/gola LIVE (dinamik)" if USE_DYNAMIC else "tabela statike + Elo"
+    print(f"Mënyra: {mode}")
     res = evaluate(matches)
     print_report(res)
 

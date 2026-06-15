@@ -40,6 +40,20 @@ def prob_pct(p) -> float:
     return prob_frac(p) * 100.0
 
 
+def model_favorite(m: dict) -> tuple[str, float]:
+    """
+    Rezultati më i mundshëm sipas modelit (jo basti me vlerë):
+    kthen ('1'|'X'|'2', probabiliteti si fraksion).
+    """
+    probs = {
+        "1": prob_frac(m.get("prob_home_win", 0)),
+        "X": prob_frac(m.get("prob_draw", 0)),
+        "2": prob_frac(m.get("prob_away_win", 0)),
+    }
+    fav = max(probs, key=lambda k: probs[k])
+    return fav, probs[fav]
+
+
 # ─── DËRGIMI I MESAZHIT ───────────────────────────────────────
 
 def send_message(text: str, parse_mode: str = "HTML") -> bool:
@@ -160,7 +174,7 @@ def format_all_matches_list(matches: list[dict]) -> str:
             current_date = m["date"]
             lines.append(f"\n📅 <b>{current_date}</b>")
 
-        o = outcome_map.get(m.get("best_outcome", ""), "?")
+        o, _ = model_favorite(m)   # rezultati më i mundshëm (favoriti), jo basti me vlerë
         lines.append(f"{m['time']}  <b>{m['home_team']} vs {m['away_team']}</b>  <b>{o}</b>")
 
     lines.append("\n─" * 16)
@@ -170,58 +184,26 @@ def format_all_matches_list(matches: list[dict]) -> str:
 
 def format_best_combo(matches: list[dict], top_n: int = 5) -> str:
     """
-    Kombinimi më i mirë: top N ndeshje sipas raportit koeficient × probabilitet.
-    Koeficienti total i kombos llogaritet si prodhim.
+    Parashikimet më të sigurta: top N ndeshjet ku modeli është më i bindur.
+    Tregon VETËM rezultatin (1/X/2) — pa probabilitet, pa koeficient.
     """
-    import math
-
-    # Filtra anti-longshot për TË GJITHA ndeshjet: EV ≥ minimum, kuotë ≤ tavan,
-    # probabilitet ≥ prag. Kjo përjashton baste si "Curaçao kundër Gjermanisë".
-    def _eligible(m) -> bool:
-        return (m.get("ev", -99) >= VALUE_MIN_EV
-                and m.get("best_odd", 99) <= VALUE_MAX_ODD
-                and prob_frac(m.get("best_prob", 0)) >= VALUE_MIN_PROB)
-
-    candidates = [m for m in matches if _eligible(m)]
-
-    if not candidates:
-        # Asnjë bast me vlerë të pranueshme → mos sugjero kombo me longshot-e.
-        return ("🎯 <b>KOMBINIMI MË I MIRË — WC 2026</b>\n" + "─" * 32 +
-                "\n\nNuk u gjet asnjë bast me vlerë të sigurt sot.\n"
-                "⚠️ <i>Më mirë asnjë bast sesa një longshot.</i>")
-
-    # Sorto sipas: probabilitet × koeficient (Expected Value absolut)
-    candidates.sort(key=lambda x: prob_frac(x.get("best_prob", 0)) * x.get("best_odd", 1), reverse=True)
-    top = candidates[:top_n]
-
-    outcome_map = {"1": "1", "X": "X", "2": "2"}
-    combo_odd = 1.0
-    for m in top:
-        combo_odd *= m.get("best_odd", 1)
-    # Probabiliteti i kombos = prodhimi i fraksioneve (gjithmonë ≤ 100%)
-    combo_prob = math.prod(prob_frac(m.get("best_prob", 0)) for m in top) * 100
+    # Rendit ndeshjet sipas sigurisë së favoritit (probabilitet më i lartë).
+    ranked = sorted(matches, key=lambda m: model_favorite(m)[1], reverse=True)
+    top = ranked[:top_n]
 
     lines = [
-        "🎯 <b>KOMBINIMI MË I MIRË — WC 2026</b>",
+        "🎯 <b>PARASHIKIMET MË TË SIGURTA — WC 2026</b>",
         "─" * 32,
     ]
     for i, m in enumerate(top, 1):
-        o = outcome_map.get(m.get("best_outcome", ""), "?")
-        kelly = m.get("kelly_stake", 0)
-        kelly_str = f"  Kelly: <b>€{kelly:.2f}</b>/€100" if kelly > 0 else ""
+        o, _ = model_favorite(m)
         lines.append(
             f"{i}. <b>{m['home_team']} vs {m['away_team']}</b>  "
-            f"({m['date']} {m['time']})\n"
-            f"   → <b>{o}</b>  Koef: <b>{m['best_odd']}</b>  "
-            f"Prob: <b>{prob_pct(m['best_prob']):.1f}%</b>{kelly_str}"
+            f"({m['date']} {m['time']})  →  <b>{o}</b>"
         )
 
     lines.append("─" * 16)
-    lines.append(
-        f"💰 <b>Koeficienti total:</b> <b>{combo_odd:.2f}</b>\n"
-        f"📊 <b>Probabiliteti:</b> <b>{combo_prob:.2f}%</b>\n"
-        f"⚠️ <i>Jo garanci fitoreje</i>"
-    )
+    lines.append("⚠️ <i>Jo garanci fitoreje</i>")
     return "\n".join(lines)
 
 

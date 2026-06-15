@@ -234,6 +234,33 @@ def default_stats(team_name: str = "") -> dict:
     }
 
 
+# Sa "ndeshje fiktive" peshon priori (tabela) kundër të dhënave live.
+# Me 1 ndeshje reale dhe PRIOR=4 → 20% live, 80% tabelë (mbron nga zhurma).
+PRIOR_MATCHES = float(os.environ.get("PRIOR_MATCHES", "4"))
+
+
+def blended_stats(team_name: str, live: dict) -> dict:
+    """
+    Përzien statistikat live (nga ndeshjet e luajtura) me priorin e tabelës,
+    me peshë sipas numrit të ndeshjeve: w = n / (n + PRIOR_MATCHES).
+    Pak ndeshje → dominon tabela; shumë ndeshje → dominon forma reale.
+    Kjo shmang që 1 ndeshje e vetme (zhurmë) të përmbysë favoritin.
+    """
+    base = default_stats(team_name)
+    n = int(live.get("played", 0) or 0)
+    if n <= 0:
+        return base
+    w = n / (n + PRIOR_MATCHES)
+    return {
+        "goals_scored_avg":   w * live["goals_scored_avg"]   + (1 - w) * base["goals_scored_avg"],
+        "goals_conceded_avg": w * live["goals_conceded_avg"] + (1 - w) * base["goals_conceded_avg"],
+        "points_per_game":    live.get("points_per_game", base["points_per_game"]),
+        "played":             n,
+        "form":               live.get("form", base["form"]),
+        "source":             f"blend({n}m+prior)",
+    }
+
+
 # ─── MODELI DIXON-COLES (v2) ──────────────────────────────────
 # Importo motorin e ri — zëvendëson Poisson bazë
 from prediction_engine_v2 import (          # type: ignore
@@ -395,8 +422,8 @@ def print_group_predictions(group_matches: list[dict],
             else:
                 hfull = m["homeTeam"]["name"]
                 afull = m["awayTeam"]["name"]
-                sh = team_stats.get(hid, default_stats(hfull))
-                sa = team_stats.get(aid, default_stats(afull))
+                sh = blended_stats(hfull, team_stats[hid]) if hid in team_stats else default_stats(hfull)
+                sa = blended_stats(afull, team_stats[aid]) if aid in team_stats else default_stats(afull)
                 p  = predict(sh, sa)
                 h_src = sh.get("source", "wc")
                 a_src = sa.get("source", "wc")
@@ -433,8 +460,8 @@ def build_model_dataframe(group_matches: list[dict],
         aid   = m["awayTeam"]["id"]
         hname = m["homeTeam"]["name"]
         aname = m["awayTeam"]["name"]
-        sh = team_stats.get(hid, default_stats(hname))
-        sa = team_stats.get(aid, default_stats(aname))
+        sh = blended_stats(hname, team_stats[hid]) if hid in team_stats else default_stats(hname)
+        sa = blended_stats(aname, team_stats[aid]) if aid in team_stats else default_stats(aname)
         # Matchday nga faza (GROUP_STAGE ndeshja 1/2/3)
         matchday = m.get("matchday", 1) or 1
         venue = (m.get("venue") or {}).get("city", "")

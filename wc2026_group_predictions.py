@@ -270,6 +270,29 @@ def blended_stats(team_name: str, live: dict) -> dict:
 USE_XG_LAMBDA = os.environ.get("USE_XG_LAMBDA", "1") not in ("0", "false", "False", "")
 
 
+# ══════════════════════════════════════════════════════════════
+# PËRMIRËSIMI #2 — Elo dinamik (override nga ndeshjet e luajtura)
+# ══════════════════════════════════════════════════════════════
+# Elo-t statike (te prediction_engine_v2.ELO_RATINGS) janë vetëm FARA.
+# send_predictions i rillogarit pas çdo xhirimi nga ndeshjet e mbaruara dhe i
+# vendos këtu si override. current_elo() i preferon ato, me fallback te fara.
+_DYNAMIC_ELO: dict = {}
+
+
+def set_dynamic_elo(ratings: dict) -> None:
+    """Vendos Elo-t e përditësuara (nga elo_store.compute_current)."""
+    global _DYNAMIC_ELO
+    _DYNAMIC_ELO = {str(k).lower(): float(v) for k, v in (ratings or {}).items()}
+
+
+def current_elo(key: str) -> float:
+    """Elo aktual: override dinamik nëse ekziston, përndryshe fara, përndryshe 1500."""
+    k = (key or "").strip().lower()
+    if k in _DYNAMIC_ELO:
+        return _DYNAMIC_ELO[k]
+    return ELO_RATINGS.get(k, 1500)
+
+
 def _xg_live_stats(team_name: str, opponent_name: str, is_home: bool) -> Optional[dict]:
     """
     Përpiqet të marrë xGF/xGA të peshuara në kohë nga shtresa dinamike (API-Sports).
@@ -393,8 +416,8 @@ def predict(stats_h: dict, stats_a: dict,
     played = min(int(stats_h.get("played", 0)), int(stats_a.get("played", 0)))
     elo_w = ELO_WEIGHT_LIVE if played >= MIN_LIVE_MATCHES else ELO_BLEND_WEIGHT
 
-    elo_h = ELO_RATINGS.get(h_key, 1500)
-    elo_a = ELO_RATINGS.get(a_key, 1500)
+    elo_h = current_elo(h_key)   # Elo dinamik (override nga ndeshjet e luajtura) → fara
+    elo_a = current_elo(a_key)
     p_elo  = 1.0 / (1.0 + 10.0 ** (-(elo_h - elo_a) / 400.0))   # P(home) sipas Elo
     p_pois = lam_h / (lam_h + lam_a) if (lam_h + lam_a) > 0 else 0.5
     p_mix  = (1.0 - elo_w) * p_pois + elo_w * p_elo
@@ -410,10 +433,10 @@ def predict(stats_h: dict, stats_a: dict,
 
     home_profile = HOST_PROFILES.get(h_key,
                    TeamProfile(home_name,
-                               elo_rating=ELO_RATINGS.get(h_key, 1500),
+                               elo_rating=current_elo(h_key),
                                group_points=group_pts_h))
     away_profile = TeamProfile(away_name,
-                               elo_rating=ELO_RATINGS.get(a_key, 1500),
+                               elo_rating=current_elo(a_key),
                                group_points=group_pts_a)
     home_profile.group_points = group_pts_h
 

@@ -3,3 +3,6 @@
 dynamic_data.sqlite
 dynamic_data.sqlite-*
 __pycache__/
+
+# Snapshot Elo (rillogaritet çdo xhirim)
+elo_ratings.json

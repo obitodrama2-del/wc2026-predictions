@@ -76,7 +76,7 @@ def build_full_stats() -> tuple:
             except Exception:
                 pass
 
-    return group_matches, team_stats
+    return group_matches, team_stats, finished_matches
 
 
 # ─── PËRGATIT TË DHËNAT PËR TELEGRAM ─────────────────────────
@@ -186,7 +186,19 @@ def main():
         sys.exit(1)
 
     # 2. Ndërto modelin
-    group_matches, team_stats = build_full_stats()
+    group_matches, team_stats, finished_matches = build_full_stats()
+
+    # 2b. Elo dinamik — rillogarit nga ndeshjet e mbaruara (determinist) dhe
+    #     vendos si override; ruaj snapshot JSON. Pa ndeshje → mbeten Elo-t fara.
+    try:
+        import elo_store
+        from wc2026_group_predictions import set_dynamic_elo
+        elo_now = elo_store.compute_current(finished_matches)
+        set_dynamic_elo(elo_now)
+        elo_store.save_json(elo_now)
+        print(f"  ✓ Elo dinamik u rillogarit nga {len(finished_matches)} ndeshje të mbaruara")
+    except Exception as e:
+        print(f"  ⚠ Elo dinamik u anashkalua ({e}); përdoren Elo-t fara")
 
     print("\n🔧 Duke ndërtuar DataFrame të modelit...")
     df_model = build_model_dataframe(group_matches, team_stats)

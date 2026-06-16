@@ -257,8 +257,61 @@ def blended_stats(team_name: str, live: dict) -> dict:
         "points_per_game":    live.get("points_per_game", base["points_per_game"]),
         "played":             n,
         "form":               live.get("form", base["form"]),
-        "source":             f"blend({n}m+prior)",
+        "source":             f"blend({n}m+{live.get('source','goals')})",
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# PËRMIRËSIMI #1 — xG si burimi kryesor i λ
+# ══════════════════════════════════════════════════════════════
+# xG/xGA janë statistikisht shumë më të qëndrueshme se golat e papërpunuar
+# (një 5-0 ose 0-4 s'përfaqëson gjithmonë performancën). Kur API jep xG,
+# e përdorim atë si burim të λ-së; përndryshe biem te golat live, e në fund te tabela.
+USE_XG_LAMBDA = os.environ.get("USE_XG_LAMBDA", "1") not in ("0", "false", "False", "")
+
+
+def _xg_live_stats(team_name: str, opponent_name: str, is_home: bool) -> Optional[dict]:
+    """
+    Përpiqet të marrë xGF/xGA të peshuara në kohë nga shtresa dinamike (API-Sports).
+    Kthen një dict {goals_scored_avg=xGF, goals_conceded_avg=xGA, played, source}
+    VETËM nëse xG është vërtet i disponueshëm; ndryshe None (→ fallback te golat/tabela).
+
+    Import i vonuar: dynamic_data importon nga ky modul (shmang import-in cirkular).
+    Pa çelës API, get_dynamic_stats short-circuit-on pa kosto rrjeti dhe kthen
+    xg_available=False → ky funksion kthen None → sjellja e vjetër ruhet (backward compatible).
+    """
+    if not USE_XG_LAMBDA:
+        return None
+    try:
+        from dynamic_data import get_dynamic_stats   # type: ignore
+        s = get_dynamic_stats(team_name, opponent_name, is_home)
+    except Exception:
+        return None
+    if s.get("xg_available") and int(s.get("played", 0) or 0) >= 1:
+        return {
+            "goals_scored_avg":   s["goals_scored_avg"],    # xGF
+            "goals_conceded_avg": s["goals_conceded_avg"],  # xGA
+            "played":             int(s["played"]),
+            "source":             "xG",
+        }
+    return None
+
+
+def resolve_match_stats(team_name: str, opponent_name: str, is_home: bool,
+                        goals_stats: Optional[dict]) -> dict:
+    """
+    Zgjedh burimin më të mirë të statistikave për një ekip dhe e përzien me priorin:
+        1) xG live (nëse ekziston)      — preferohet (më pak variancë)
+        2) gola live (football-data)    — fallback
+        3) tabela TEAM_STATS_BASE       — fallback final
+    Përzierja Bayesiane (blended_stats) zbatohet njësoj për (1) dhe (2).
+    """
+    live = _xg_live_stats(team_name, opponent_name, is_home)
+    if live is None:
+        live = goals_stats          # gola live nga ndeshjet e WC (ose None)
+    if not live or int(live.get("played", 0) or 0) <= 0:
+        return default_stats(team_name)
+    return blended_stats(team_name, live)
 
 
 # ─── MODELI DIXON-COLES (v2) ──────────────────────────────────
@@ -422,8 +475,8 @@ def print_group_predictions(group_matches: list[dict],
             else:
                 hfull = m["homeTeam"]["name"]
                 afull = m["awayTeam"]["name"]
-                sh = blended_stats(hfull, team_stats[hid]) if hid in team_stats else default_stats(hfull)
-                sa = blended_stats(afull, team_stats[aid]) if aid in team_stats else default_stats(afull)
+                sh = resolve_match_stats(hfull, afull, True,  team_stats.get(hid))
+                sa = resolve_match_stats(afull, hfull, False, team_stats.get(aid))
                 p  = predict(sh, sa)
                 h_src = sh.get("source", "wc")
                 a_src = sa.get("source", "wc")
@@ -460,8 +513,8 @@ def build_model_dataframe(group_matches: list[dict],
         aid   = m["awayTeam"]["id"]
         hname = m["homeTeam"]["name"]
         aname = m["awayTeam"]["name"]
-        sh = blended_stats(hname, team_stats[hid]) if hid in team_stats else default_stats(hname)
-        sa = blended_stats(aname, team_stats[aid]) if aid in team_stats else default_stats(aname)
+        sh = resolve_match_stats(hname, aname, True,  team_stats.get(hid))
+        sa = resolve_match_stats(aname, hname, False, team_stats.get(aid))
         # Matchday nga faza (GROUP_STAGE ndeshja 1/2/3)
         matchday = m.get("matchday", 1) or 1
         venue = (m.get("venue") or {}).get("city", "")

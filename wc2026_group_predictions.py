@@ -10,6 +10,7 @@ import json
 import os
 from itertools import product
 from collections import defaultdict
+from typing import Optional
 
 CACHE_FILE = os.path.join(os.path.dirname(__file__), "wc2026_cache.json")
 REQUEST_DELAY = 6.5   # sekonda midis kërkesave (free tier: max 10/min)

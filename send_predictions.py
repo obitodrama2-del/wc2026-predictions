@@ -52,8 +52,10 @@ def build_full_stats() -> tuple:
     team_names = {}
     for m in group_matches:
         for side in ("homeTeam", "awayTeam"):
-            tid = m[side]["id"]
-            team_names[tid] = m[side]["name"]
+            tid = m[side].get("id")
+            if tid is None:                 # ekip TBD (eliminatore ende pa u vendosur)
+                continue
+            team_names[tid] = m[side].get("name")
 
     # Historiku nga cache (nëse ekziston)
     missing = [tid for tid in team_names
@@ -92,8 +94,10 @@ def prepare_matches_data(group_matches: list, team_stats: dict,
     # Map: (home_norm, away_norm) → utcDate
     schedule_map = {}
     for m in group_matches:
-        hname = m["homeTeam"]["name"]
-        aname = m["awayTeam"]["name"]
+        hname = m["homeTeam"].get("name")
+        aname = m["awayTeam"].get("name")
+        if not hname or not aname:      # anashkalo ndeshjet TBD (ekipe null)
+            continue
         schedule_map[(hname.lower(), aname.lower())] = m["utcDate"]
 
     results = []

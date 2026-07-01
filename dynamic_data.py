@@ -320,11 +320,15 @@ class APISportsClient:
         self.cache = cache or SQLiteCache()
         self.rate = rate_limiter or RateLimiter(self.cache)
         self.cache_ttl_hours = cache_ttl_hours
+        # Bëhet True kur plani (falas) nuk lejon një veçori (p.sh. param `last`).
+        # Pasi vendoset, klienti çaktivizohet për sesionin → fallback i pastër,
+        # pa shpenzuar thirrje kot e pa spam gabimesh për çdo ekip.
+        self.plan_limited = False
 
     @property
     def enabled(self) -> bool:
-        """A kemi çelës të vlefshëm për të bërë thirrje live?"""
-        return bool(self.api_key)
+        """A kemi çelës të vlefshëm dhe plan që lejon thirrje live?"""
+        return bool(self.api_key) and not self.plan_limited
 
     def _headers(self) -> dict:
         # VETËM x-apisports-key. PA `X-RapidAPI-Key`, PA `X-RapidAPI-Host`.
@@ -377,14 +381,18 @@ class APISportsClient:
 
         # API-Sports i kthen gabimet brenda trupit edhe me HTTP 200.
         errors = data.get("errors")
-        if errors:
-            # `errors` mund të jetë dict ose list bosh.
-            if isinstance(errors, dict) and errors:
+        if errors and (isinstance(errors, dict) and errors or
+                       isinstance(errors, list) and errors):
+            # Kufizim plani (p.sh. "Free plans do not have access to the Last
+            # parameter") → çaktivizo xG-në për sesionin (fallback i pastër).
+            if "plan" in str(errors).lower() or "last parameter" in str(errors).lower():
+                if not self.plan_limited:
+                    print("  [API-Sports] Plani nuk lejon këtë veçori (xG) → "
+                          "kalohet te golat/Elo për të gjitha ndeshjet.")
+                self.plan_limited = True
+            else:
                 print(f"  [API-Sports] Gabim API: {errors}")
-                return None
-            if isinstance(errors, list) and errors:
-                print(f"  [API-Sports] Gabim API: {errors}")
-                return None
+            return None
 
         # Ruaj në cache vetëm përgjigjet e suksesshme.
         self.cache.set(cache_key, data)

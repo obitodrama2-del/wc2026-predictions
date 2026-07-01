@@ -143,8 +143,13 @@ def save_cache(cache: dict):
 
 
 def get_group_stage_matches() -> list[dict]:
-    """Merr të gjitha ndeshjet e fazës së grupeve (SCHEDULED + FINISHED)."""
-    data = api_get(f"/competitions/{WC_CODE}/matches", {"stage": "GROUP_STAGE"})
+    """
+    Merr TË GJITHA ndeshjet e WC (të gjitha fazat: grupe + eliminatore),
+    SCHEDULED + FINISHED. build_model_dataframe i anashkalon ato FINISHED,
+    kështu që kur mbaron faza e grupeve, boti kalon automatikisht te
+    ndeshjet eliminatore të planifikuara. (Emri ruhet për përputhshmëri.)
+    """
+    data = api_get(f"/competitions/{WC_CODE}/matches", {})
     if not data:
         return []
     return data.get("matches", [])
@@ -537,6 +542,9 @@ def build_model_dataframe(group_matches: list[dict],
         aid   = m["awayTeam"]["id"]
         hname = m["homeTeam"]["name"]
         aname = m["awayTeam"]["name"]
+        # Anashkalo ndeshjet eliminatore ende TË PAPËRCAKTUARA (ekipe TBD → emër null).
+        if not hname or not aname:
+            continue
         sh = resolve_match_stats(hname, aname, True,  team_stats.get(hid))
         sa = resolve_match_stats(aname, hname, False, team_stats.get(aid))
         # Matchday nga faza (GROUP_STAGE ndeshja 1/2/3)

@@ -203,7 +203,16 @@ def main():
     print("\n🔧 Duke ndërtuar DataFrame të modelit...")
     df_model = build_model_dataframe(group_matches, team_stats)
     if df_model is None or df_model.empty:
-        print("✗ Nuk u ndërtua modeli."); sys.exit(1)
+        # Asnjë ndeshje e planifikuar me ekipe të përcaktuara (p.sh. midis
+        # raundeve eliminatore kur çiftet s'janë vendosur ende, ose fund turneu).
+        # Dalim PASTËR (exit 0) që GitHub Action të mos shënohet si i dështuar.
+        print("ℹ Nuk ka ndeshje të planifikuara për parashikim (TBD ose fund turneu).")
+        try:
+            send_message("ℹ️ <b>WC 2026</b>\nNuk ka ndeshje të reja për parashikim tani "
+                         "(çiftet eliminatore ende s'janë përcaktuar ose turneu përfundoi).")
+        except Exception:
+            pass
+        sys.exit(0)
     print(f"  ✓ {len(df_model)} ndeshje")
 
     # 3. Merr koeficientet Tipico
